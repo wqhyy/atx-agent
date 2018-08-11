@@ -35,7 +35,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/mholt/archiver"
 	"github.com/openatx/androidutils"
-	"github.com/openatx/atx-agent/cmdctrl"
+	"github.com/wqhyy/atx-agent/cmdctrl"
 	"github.com/pkg/errors"
 	"github.com/qiniu/log"
 	"github.com/rs/cors"
