@@ -54,7 +54,7 @@ var (
 		},
 	}
 
-	version    = "dev"
+	version    = "1.0.0"
 	owner      = "openatx"
 	repo       = "atx-agent"
 	listenPort int
@@ -850,6 +850,16 @@ func (server *Server) initHTTPServer() {
 		fmt.Fprintf(w, "rotation change to %d", deviceRotation)
 	})
 
+	//10 minute to update status
+	const serverConnectTimeout = 10 * time.Minute
+	serverConnectTimer := NewSafeTimer(serverConnectTimeout)
+	go func() {
+		for range serverConnectTimer.C {
+			registerClient()
+			serverConnectTimer.Reset(serverConnectTimeout)
+		}
+	}()
+
 	/*
 	 # URLRules:
 	 #   URLPath ends with / means directory, eg: $DEVICE_URL/upload/sdcard/
@@ -1265,6 +1275,7 @@ func (server *Server) initHTTPServer() {
 
 	m.HandleFunc("/info", func(w http.ResponseWriter, r *http.Request) {
 		info := getDeviceInfo()
+		info.Battery.Update()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(info)
 	})
@@ -1285,6 +1296,41 @@ func (server *Server) initHTTPServer() {
 			targetURL += "?" + r.URL.RawQuery
 		}
 		http.Redirect(w, r, targetURL, 302)
+	}).Methods("GET")
+
+	//used for ui test. none res jpg
+	uiScreenshotIndex := -1
+	uiNextScreenshotFilename := func() string {
+		targetFolder := "/data/local/tmp/ui/minicap-ui"
+		if _, err := os.Stat(targetFolder); err != nil {
+			os.MkdirAll(targetFolder, 0755)
+		}
+		uiScreenshotIndex = (uiScreenshotIndex + 1)
+		return filepath.Join(targetFolder, fmt.Sprintf("%d.jpg", uiScreenshotIndex))
+	}
+	m.HandleFunc("/ui/screenshot", func(w http.ResponseWriter, r *http.Request) {
+		thumbnailSize := r.FormValue("thumbnail")
+		filename := uiNextScreenshotFilename()
+		if err := Screenshot(filename, thumbnailSize); err != nil {
+			log.Printf("screenshot[minicap] error: %v", err)
+		} else {
+			w.Header().Set("X-Screenshot-Method", "minicap")
+		}
+	})
+
+	//before ui. clean ui data.
+	m.HandleFunc("/ui/init", func(w http.ResponseWriter, r *http.Request) {
+		uiScreenshotIndex = -1
+		if _, err := runShell("rm", "-rf", "/data/local/tmp/ui.tar", "rm", "-rf", "/data/local/tmp/ui/*"); err != nil {
+			log.Println("ui init ui err:", err)
+		}
+	}).Methods("GET")
+
+	//after ui. package all files.
+	m.HandleFunc("/ui/pack", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := runShell("cd", "/data/local/tmp/", "&&", "tar", "-cvf", "ui.tar", "ui/"); err != nil {
+			log.Println("package ui err:", err)
+		}
 	}).Methods("GET")
 
 	m.Handle("/jsonrpc/0", uiautomatorProxy)
@@ -1348,6 +1394,66 @@ func stopSelf() {
 	}
 }
 
+//register client to server
+var serverName = ""
+var serverArea = 0
+func registerClient() {
+	ipStr := mustGetOoutboundIP().String()
+	portStr := strconv.Itoa(listenPort)
+	ipStr = ipStr + ":" + portStr
+
+	info := getDeviceInfo()
+	info.Battery.Update()
+
+	tmpClient := &http.Client{}
+
+	deviceJson := make(map[string]interface{})
+	deviceJson["ip"] = ipStr
+	deviceJson["udid"] = info.Udid
+	deviceJson["area"] = serverArea
+	deviceJson["version"] = info.Version
+	deviceJson["brand"] = info.Brand
+	deviceJson["model"] = info.Model
+	deviceJson["agentVersion"] = info.AgentVersion
+	deviceJson["width"] = info.Display.Width
+	deviceJson["height"] = info.Display.Height
+	deviceJson["memory"] = info.Memory.Around
+	deviceJson["battery"] = info.Battery.Level
+	deviceJson["batteryStatus"] = info.Battery.Status
+
+	bytesData, err := json.Marshal(deviceJson)
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+	reader := bytes.NewReader(bytesData)
+	url := "http://" + serverName + "/api/device/add";
+	request, err := http.NewRequest("POST", url, reader)
+	if err != nil {
+		log.Println(err)
+		//fmt.Println(err.Error())
+		return
+	}
+	request.Header.Set("Content-Type", "application/json;charset=UTF-8")
+
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	response, _ := tmpClient.Do(request)
+
+	if (response != nil) {
+		status := response.StatusCode
+		if (status == 200) {
+			log.Println("CONNECT TO SERVER SUCCESS: " + serverName)
+			return
+		}
+	}
+	log.Println("CAN NOT CONNECT TO SERVER: " + serverName)
+
+}
+
 func main() {
 	fDaemon := flag.Bool("d", false, "run daemon")
 	flag.IntVar(&listenPort, "p", 7912, "listen port") // Create on 2017/09/12
@@ -1355,6 +1461,7 @@ func main() {
 	fRequirements := flag.Bool("r", false, "install minicap and uiautomator.apk")
 	fStop := flag.Bool("stop", false, "stop server")
 	fTunnelServer := flag.String("t", "", "tunnel server address")
+	fTunnelServerArea := flag.Int("ta", 0, "tunnel server area")
 	fNoUiautomator := flag.Bool("nouia", false, "not start uiautomator")
 	flag.Parse()
 
@@ -1461,7 +1568,7 @@ func main() {
 	}
 	if *fTunnelServer != "" {
 		// go tunnel.RunForever()
-		go tunnel.Heratbeat()
+		//go tunnel.Heratbeat()
 	}
 
 	server := NewServer(tunnel)
@@ -1476,6 +1583,12 @@ func main() {
 			server.httpServer.Shutdown(context.TODO())
 		}
 	}()
+
+	// register client to server
+	serverArea = *fTunnelServerArea
+	serverName = *fTunnelServer
+	registerClient()
+
 	// run server forever
 	if err := server.Serve(listener); err != nil {
 		log.Println("server quit:", err)
