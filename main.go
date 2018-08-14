@@ -741,6 +741,63 @@ func (server *Server) initHTTPServer() {
 		log.Println("program quit")
 	})
 
+	/**
+		nohup run shell.
+	 */
+	m.HandleFunc("/shell/nohup", func(w http.ResponseWriter, r *http.Request) {
+		command := r.FormValue("command")
+		if command == "" {
+			command = r.FormValue("c")
+		}
+
+		c := exec.Command("nohup", "sh", "-c", command, "&")
+		c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+		err := c.Start()
+
+		exitCode := cmdError2Code(err)
+
+		renderJSON(w, map[string]interface{}{
+			"output":   c.Process.Pid,
+			"exitCode": exitCode,
+			"error":    err,
+		})
+	}).Methods("GET", "POST")
+
+	/**
+		stop nohup run shell.
+	 */
+	m.HandleFunc("/shell/nohup/stop", func(w http.ResponseWriter, r *http.Request) {
+		pidStr := r.FormValue("pid")
+		pid, err := strconv.Atoi(pidStr)
+
+		if (err != nil) {
+			renderJSON(w, map[string]interface{}{
+				"output":   "pid string to int fail",
+				"exitCode": -1,
+				"error":    err,
+			})
+			return
+		}
+
+		killerr := syscall.Kill(-pid, syscall.SIGQUIT)
+
+		if (killerr != nil) {
+			renderJSON(w, map[string]interface{}{
+				"output":   "kill pid fail,pid:" + pidStr,
+				"exitCode": -1,
+				"error":    killerr,
+			})
+		}
+
+		renderJSON(w, map[string]interface{}{
+			"output":   "success",
+			"exitCode": 0,
+			"error":    "",
+		})
+
+	}).Methods("GET", "POST")
+
 	m.HandleFunc("/stop", func(w http.ResponseWriter, r *http.Request) {
 		log.Println("stop all service")
 		service.StopAll()
@@ -1397,6 +1454,7 @@ func stopSelf() {
 //register client to server
 var serverName = ""
 var serverArea = 0
+
 func registerClient() {
 	ipStr := mustGetOoutboundIP().String()
 	portStr := strconv.Itoa(listenPort)
