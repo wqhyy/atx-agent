@@ -842,10 +842,13 @@ func (server *Server) initHTTPServer() {
 
 	// keep ApkService always running
 	// if no activity in 5min, then restart apk service
-	const apkServiceTimeout = 5 * time.Minute
+	const apkServiceTimeout = 5 * time.Second
 	apkServiceTimer := NewSafeTimer(apkServiceTimeout)
 	go func() {
 		for range apkServiceTimer.C {
+			if (!service.Running("uiautomator")){
+				service.Start("uiautomator")
+			}
 			log.Println("startservice com.github.uiautomator/.Service")
 			runShell("am", "startservice", "-n", "com.github.uiautomator/.Service")
 			apkServiceTimer.Reset(apkServiceTimeout)
