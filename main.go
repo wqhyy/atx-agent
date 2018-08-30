@@ -749,18 +749,18 @@ func (server *Server) initHTTPServer() {
 		if command == "" {
 			command = r.FormValue("c")
 		}
-
-		c := exec.Command("nohup", "sh", "-c", command, "&")
+		//c := exec.Command("nohup", "sh", "-c", command, "&")
+		c := exec.Command("sh", "-c", command, "&")
 		c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-		err := c.Start()
+		c.Start()
 
-		exitCode := cmdError2Code(err)
+		//exitCode := cmdError2Code(err)
 
 		renderJSON(w, map[string]interface{}{
 			"output":   c.Process.Pid,
-			"exitCode": exitCode,
-			"error":    err,
+			"exitCode": 0,
+			"error":    "",
 		})
 	}).Methods("GET", "POST")
 
@@ -846,7 +846,7 @@ func (server *Server) initHTTPServer() {
 	apkServiceTimer := NewSafeTimer(apkServiceTimeout)
 	go func() {
 		for range apkServiceTimer.C {
-			if (!service.Running("uiautomator")){
+			if (!service.Running("uiautomator")) {
 				service.Start("uiautomator")
 			}
 			log.Println("startservice com.github.uiautomator/.Service")
