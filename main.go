@@ -41,6 +41,7 @@ import (
 	"github.com/rs/cors"
 	"github.com/sevlyar/go-daemon"
 	"github.com/shogo82148/androidbinary/apk"
+	"github.com/wqhyy/atx-agent/common"
 )
 
 var (
@@ -1388,9 +1389,12 @@ func (server *Server) initHTTPServer() {
 
 	//after ui. package all files.
 	m.HandleFunc("/ui/pack", func(w http.ResponseWriter, r *http.Request) {
-		if _, err := runShell("cd", "/data/local/tmp/", "&&", "tar", "-cvf", "ui.tar", "ui/"); err != nil {
+		if err := xhstar.Tar("/data/local/tmp/ui","/data/local/tmp/ui.tar",false); err != nil {
 			log.Println("package ui err:", err)
 		}
+		//if _, err := runShell("cd", "/data/local/tmp/", "&&", "tar", "-cvf", "ui.tar", "ui/"); err != nil {
+		//	log.Println("package ui err:", err)
+		//}
 	}).Methods("GET")
 
 	m.Handle("/jsonrpc/0", uiautomatorProxy)
