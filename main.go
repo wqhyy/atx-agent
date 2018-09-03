@@ -842,8 +842,8 @@ func (server *Server) initHTTPServer() {
 	})
 
 	// keep ApkService always running
-	// if no activity in 5min, then restart apk service
-	const apkServiceTimeout = 5 * time.Second
+	// if no activity in 5min, then restart apk service／
+	const apkServiceTimeout = 5 * time.Minute
 	apkServiceTimer := NewSafeTimer(apkServiceTimeout)
 	go func() {
 		for range apkServiceTimer.C {
@@ -1389,7 +1389,7 @@ func (server *Server) initHTTPServer() {
 
 	//after ui. package all files.
 	m.HandleFunc("/ui/pack", func(w http.ResponseWriter, r *http.Request) {
-		if err := xhstar.Tar("/data/local/tmp/ui","/data/local/tmp/ui.tar",false); err != nil {
+		if err := common.Tar("/data/local/tmp/ui","/data/local/tmp/ui.tar",false); err != nil {
 			log.Println("package ui err:", err)
 		}
 		//if _, err := runShell("cd", "/data/local/tmp/", "&&", "tar", "-cvf", "ui.tar", "ui/"); err != nil {
@@ -1397,7 +1397,22 @@ func (server *Server) initHTTPServer() {
 		//}
 	}).Methods("GET")
 
-	m.Handle("/jsonrpc/0", uiautomatorProxy)
+	//m.Handle("/jsonrpc/0", uiautomatorProxy)
+	m.HandleFunc("/jsonrpc/0", func(w http.ResponseWriter, r *http.Request){
+		outPutBytes,_ := runShell("dumpsys", "activity", "|", "grep","com.github.uiautomator/.Service")
+		outPutStr := string(outPutBytes)
+		if (outPutStr == "") {
+			log.Println("-----uiautomator is not running------")
+			if (!service.Running("uiautomator")) {
+				log.Println("-----restart uiautomator------")
+				service.Start("uiautomator")
+			}
+			runShell("am", "startservice", "-n", "com.github.uiautomator/.Service")
+			time.Sleep(3 * time.Second)
+		}
+		uiautomatorProxy.ServeHTTP(w, r)
+		return
+	})
 	m.Handle("/ping", uiautomatorProxy)
 	m.HandleFunc("/screenshot/0", func(w http.ResponseWriter, r *http.Request) {
 		if r.FormValue("minicap") == "false" || strings.ToLower(getCachedProperty("ro.product.manufacturer")) == "meizu" {

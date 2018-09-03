@@ -1,4 +1,4 @@
-package xhstar
+package common
 
 import (
 	"archive/tar"
