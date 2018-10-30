@@ -1364,7 +1364,7 @@ func (server *Server) initHTTPServer() {
 	uiNextScreenshotFilename := func() string {
 		targetFolder := "/data/local/tmp/ui/minicap-ui"
 		if _, err := os.Stat(targetFolder); err != nil {
-			os.MkdirAll(targetFolder, 0755)
+			os.MkdirAll(targetFolder, 0777)
 		}
 		uiScreenshotIndex = (uiScreenshotIndex + 1)
 		return filepath.Join(targetFolder, fmt.Sprintf("%d.jpg", uiScreenshotIndex))
